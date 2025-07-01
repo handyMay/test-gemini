@@ -9,9 +9,20 @@
     <div id="ui-container">
         <button id="save-button">Save</button>
         <button id="layout-button">Layout</button>
+        <button id="help-button">Help</button>
         <input type="file" id="load-button" accept=".json">
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.2.4/pixi.min.js"></script>
+    <div id="help-dialog" class="hidden">
+        <div id="help-content">
+            <h2>Help</h2>
+            <p><strong>Add a node:</strong> Double-click on the canvas.</p>
+            <p><strong>Insert a node:</strong> Click on the line connecting two nodes.</p>
+            <p><strong>Move a node:</strong> Click and drag a node.</p>
+            <p><strong>Delete a node:</strong> Right-click on a node.</p>
+            <button id="close-help">Close</button>
+        </div>
+    </div>
     <script src="main.js"></script>
 </body>
 </html>

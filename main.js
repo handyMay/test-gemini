@@ -11,6 +11,8 @@ let nodes = [];
 let lines = new PIXI.Graphics();
 app.stage.addChild(lines);
 
+let selectedNode = null;
+
 class Node extends PIXI.Graphics {
     constructor(x, y, text = 'New Node') {
         super();
@@ -20,15 +22,31 @@ class Node extends PIXI.Graphics {
         this.text = new PIXI.Text(text, { fontSize: 14, fill: 0xffffff });
         this.text.anchor.set(0.5);
         this.addChild(this.text);
+        this._selected = false;
         this.draw();
         this.on('pointerdown', this.onDragStart);
         this.on('pointerup', this.onDragEnd);
         this.on('pointerupoutside', this.onDragEnd);
         this.on('pointermove', this.onDragMove);
+        this.on('rightdown', this.onRightClick);
+        this.on('pointerup', this.onSelect);
         this.connections = [];
     }
 
+    set selected(value) {
+        this._selected = value;
+        this.draw();
+    }
+
+    get selected() {
+        return this._selected;
+    }
+
     draw() {
+        this.clear();
+        if (this._selected) {
+            this.lineStyle(2, 0xFFFFFF);
+        }
         this.beginFill(0xDE3249);
         this.drawCircle(0, 0, 30);
         this.endFill();
@@ -38,6 +56,7 @@ class Node extends PIXI.Graphics {
         this.data = event.data;
         this.alpha = 0.5;
         this.dragging = true;
+        // No stopPropagation here, let stage handle it for selection/double-click
     }
 
     onDragEnd() {
@@ -54,12 +73,42 @@ class Node extends PIXI.Graphics {
             updateLines();
         }
     }
+
+    onRightClick(event) {
+        console.log(`Right-click on node: ${this.text.text}`);
+        const nodeToRemove = this;
+        const index = nodes.indexOf(nodeToRemove);
+        if (index > -1) {
+            nodes.splice(index, 1);
+        }
+
+        for (const node of nodes) {
+            const connectionIndex = node.connections.indexOf(nodeToRemove);
+            if (connectionIndex > -1) {
+                node.connections.splice(connectionIndex, 1);
+            }
+        }
+
+        app.stage.removeChild(nodeToRemove);
+        updateLines();
+        event.stopPropagation(); // Prevent stage from deselecting
+    }
+
+    onSelect(event) {
+        console.log(`Node selected: ${this.text.text}`);
+        if (selectedNode) {
+            selectedNode.selected = false;
+        }
+        selectedNode = this;
+        this.selected = true;
+    }
 }
 
 function addNode(x, y, text) {
     const node = new Node(x, y, text);
     app.stage.addChild(node);
     nodes.push(node);
+    console.log(`Node added: ${text} at (${x}, ${y})`);
     return node;
 }
 
@@ -79,49 +128,97 @@ app.stage.hitArea = app.screen;
 
 let lastClickTime = 0;
 let lastClickPos = { x: 0, y: 0 };
+let clickTimeout = null;
 
 app.stage.on('pointerdown', (event) => {
+    console.log("Stage pointerdown event fired. Target:", event.target);
+
     const clickTime = Date.now();
     const clickPos = event.global;
+    const localPos = app.stage.toLocal(clickPos);
 
-    if (clickTime - lastClickTime < 300 && Math.abs(clickPos.x - lastClickPos.x) < 10 && Math.abs(clickPos.y - lastClickPos.y) < 10) {
-        // Double click
-        const node = addNode(event.global.x, event.global.y);
-        if (nodes.length > 1) {
-            const lastNode = nodes[nodes.length - 2];
-            lastNode.connections.push(node);
-        }
-        updateLines();
-    } else {
-        // Single click
-        let lineClicked = false;
-        for (const nodeA of nodes) {
-            for (const nodeB of nodeA.connections) {
-                const p = event.global;
-                const p1 = { x: nodeA.x, y: nodeA.y };
-                const p2 = { x: nodeB.x, y: nodeB.y };
+    const isDoubleClick = (clickTime - lastClickTime < 300 && Math.abs(clickPos.x - lastClickPos.x) < 10 && Math.abs(clickPos.y - lastClickPos.y) < 10);
 
-                const d = distToSegment(p, p1, p2);
-
-                if (d < 5) {
-                    const newNode = addNode(p.x, p.y);
-                    const index = nodeA.connections.indexOf(nodeB);
-                    if (index > -1) {
-                        nodeA.connections.splice(index, 1);
-                    }
-                    nodeA.connections.push(newNode);
-                    newNode.connections.push(nodeB);
-                    updateLines();
-                    lineClicked = true;
-                    break;
-                }
-            }
-            if (lineClicked) break;
-        }
+    if (clickTimeout) {
+        clearTimeout(clickTimeout);
+        clickTimeout = null;
     }
 
-    lastClickTime = clickTime;
-    lastClickPos = clickPos;
+    if (isDoubleClick) {
+        console.log("Double click detected.");
+        if (event.target instanceof Node) {
+            console.log(`Double-click on node: ${event.target.text.text}`);
+            // Double-click on a node: create child
+            const newNode = addNode(localPos.x, localPos.y);
+            event.target.connections.push(newNode);
+            console.log(`Connected new node to ${event.target.text.text}`);
+            updateLines();
+        } else {
+            console.log("Double-click on canvas background.");
+            // Double-click on canvas background: create new node (child of selected or new root)
+            const newNode = addNode(localPos.x, localPos.y);
+            if (selectedNode) {
+                selectedNode.connections.push(newNode);
+                console.log(`Connected new node to selected node: ${selectedNode.text.text}`);
+            } else {
+                console.log("No node selected, new node is a root.");
+            }
+            updateLines();
+        }
+        // Reset lastClickTime to prevent triple-clicks or accidental double-clicks
+        lastClickTime = 0;
+    } else {
+        // This is a potential single click or the first click of a double click
+        lastClickTime = clickTime;
+        lastClickPos = clickPos;
+
+        clickTimeout = setTimeout(() => {
+            console.log("Single click processed after delay.");
+            // If the click was NOT directly on the stage (i.e., it was on a child object like a Node),
+            // then we let the child object's handlers manage the event.
+            if (event.target !== app.stage) {
+                console.log("Click was on a child object, stage will not handle this event.");
+                return; // Exit early if a child object was clicked
+            }
+
+            console.log("Single click on canvas background detected.");
+            // Single click on canvas background: deselect node
+            if (selectedNode) {
+                console.log(`Deselecting node: ${selectedNode.text.text}`);
+                selectedNode.selected = false;
+                selectedNode = null;
+            }
+
+            // Check for line click to insert a node
+            let lineClicked = false;
+            for (const nodeA of nodes) {
+                for (const nodeB of nodeA.connections) {
+                    const p = localPos;
+                    const p1 = { x: nodeA.x, y: nodeA.y };
+                    const p2 = { x: nodeB.x, y: nodeB.y };
+
+                    const d = distToSegment(p, p1, p2);
+
+                    if (d < 5) {
+                        console.log(`Line click detected between ${nodeA.text.text} and ${nodeB.text.text}`);
+                        const newNode = addNode(p.x, p.y);
+                        const index = nodeA.connections.indexOf(nodeB);
+                        if (index > -1) {
+                            nodeA.connections.splice(index, 1);
+                            console.log(`Removed connection from ${nodeA.text.text} to ${nodeB.text.text}`);
+                        }
+                        nodeA.connections.push(newNode);
+                        newNode.connections.push(nodeB);
+                        console.log(`Inserted new node between ${nodeA.text.text} and ${nodeB.text.text}`);
+                        updateLines();
+                        lineClicked = true;
+                        break;
+                    }
+                }
+                if (lineClicked) break;
+            }
+        }, 300); // 300ms delay for single click
+    }
 });
 
 function dist2(v, w) {
@@ -287,5 +384,15 @@ function layoutTree(node, visited, x, y, width) {
         layoutTree(child, visited, childX, childY, childWidth);
     }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('help-button').addEventListener('click', () => {
+        document.getElementById('help-dialog').classList.remove('hidden');
+    });
+
+    document.getElementById('close-help').addEventListener('click', () => {
+        document.getElementById('help-dialog').classList.add('hidden');
+    });
+});
 
 
