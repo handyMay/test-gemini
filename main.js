@@ -270,9 +270,24 @@ function distToSegment(p, v, w) {
 
 // Zoom
 app.view.addEventListener('wheel', (event) => {
-    const scale = event.deltaY > 0 ? 0.9 : 1.1;
-    app.stage.scale.x *= scale;
-    app.stage.scale.y *= scale;
+    event.preventDefault(); // Prevent page scrolling
+
+    const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1;
+
+    // Get mouse position in stage coordinates
+    const mouseX = event.clientX;
+    const mouseY = event.clientY;
+
+    const worldX = (mouseX - app.stage.x) / app.stage.scale.x;
+    const worldY = (mouseY - app.stage.y) / app.stage.scale.y;
+
+    // Apply scale
+    app.stage.scale.x *= scaleFactor;
+    app.stage.scale.y *= scaleFactor;
+
+    // Adjust stage position to keep the world point under the mouse
+    app.stage.x = mouseX - worldX * app.stage.scale.x;
+    app.stage.y = mouseY - worldY * app.stage.scale.y;
 });
 
 // Pan
