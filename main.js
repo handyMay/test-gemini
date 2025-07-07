@@ -147,12 +147,31 @@ app.stage.on('pointerdown', (event) => {
     if (isDoubleClick) {
         console.log("Double click detected.");
         if (event.target instanceof Node) {
-            console.log(`Double-click on node: ${event.target.text.text}`);
-            // Double-click on a node: create child
-            const newNode = addNode(localPos.x, localPos.y);
-            event.target.connections.push(newNode);
-            console.log(`Connected new node to ${event.target.text.text}`);
-            updateLines();
+            const node = event.target;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = node.text.text;
+            input.style.position = 'absolute';
+            const screenPos = node.getGlobalPosition();
+            input.style.left = `${screenPos.x}px`;
+            input.style.top = `${screenPos.y}px`;
+            input.style.transform = 'translate(-50%, -50%)';
+            input.style.width = `${node.text.width + 20}px`;
+            document.getElementById('input-container').appendChild(input);
+
+            input.focus();
+
+            const onInputFinish = () => {
+                node.text.text = input.value;
+                document.getElementById('input-container').removeChild(input);
+            };
+
+            input.addEventListener('blur', onInputFinish);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    onInputFinish();
+                }
+            });
         } else {
             console.log("Double-click on canvas background.");
             // Double-click on canvas background: create new node (child of selected or new root)
@@ -328,18 +347,25 @@ addNode(app.screen.width / 2, app.screen.height / 2, 'Root');
 
 
 document.getElementById('layout-button').addEventListener('click', () => {
-    if (nodes.length === 0) return;
+    console.log("Layout button clicked.");
+    if (nodes.length === 0) {
+        console.log("No nodes to layout.");
+        return;
+    }
 
     const root = findRoot();
     if (!root) {
         console.error("Could not find a root node for the layout.");
         return;
     }
+    console.log("Root node for layout:", root.text.text);
 
     const visited = new Set();
     layoutTree(root, visited, app.screen.width / 2, 50, app.screen.width);
 
     updateLines();
+    resetView(); // Reset view after layout
+    console.log("Layout complete.");
 });
 
 function findRoot() {
@@ -350,39 +376,61 @@ function findRoot() {
         }
     }
     if (allNodes.size === 0 && nodes.length > 0) {
+        console.log("No root found, but nodes exist. Returning first node as fallback.");
         return nodes[0]; // Fallback for single node or cycles
     }
     if (allNodes.size !== 1) {
         console.warn("Mind map has multiple roots or is disconnected. Using the first node as the root for layout.");
         return nodes[0];
     }
+    console.log("Found single root:", allNodes.values().next().value.text.text);
     return allNodes.values().next().value;
 }
 
-function layoutTree(node, visited, x, y, width) {
+function layoutTree(node, visited, x, y, totalWidth) {
+    console.log(`layoutTree: Node=${node.text.text}, x=${x}, y=${y}, totalWidth=${totalWidth}`);
     if (visited.has(node)) {
+        console.log(`layoutTree: Node ${node.text.text} already visited.`);
         return;
     }
     visited.add(node);
 
     node.x = x;
     node.y = y;
+    console.log(`layoutTree: Setting node ${node.text.text} position to (${node.x}, ${node.y})`);
 
     const children = node.connections.filter(c => !visited.has(c));
     const childCount = children.length;
+    console.log(`layoutTree: Node ${node.text.text} has ${childCount} unvisited children.`);
     if (childCount === 0) {
         return;
     }
 
-    const childWidth = width / childCount;
-    let startX = x - width / 2;
+    const verticalSpacing = 150; // Increased vertical spacing
+    const horizontalPadding = 50; // Padding between child subtrees
+
+    let currentX = x - totalWidth / 2;
 
     for (let i = 0; i < childCount; i++) {
         const child = children[i];
-        const childX = startX + childWidth / 2 + i * childWidth;
-        const childY = y + 100;
-        layoutTree(child, visited, childX, childY, childWidth);
+        // Estimate child subtree width (a simple heuristic for now)
+        const childSubtreeWidth = totalWidth / childCount; 
+        
+        const childX = currentX + childSubtreeWidth / 2;
+        const childY = y + verticalSpacing;
+        
+        console.log(`layoutTree: Recursing for child ${child.text.text} with x=${childX}, y=${childY}, subtreeWidth=${childSubtreeWidth}`);
+        layoutTree(child, visited, childX, childY, childSubtreeWidth - horizontalPadding);
+        currentX += childSubtreeWidth;
     }
+}
+
+function resetView() {
+    app.stage.x = 0;
+    app.stage.y = 0;
+    app.stage.scale.x = 1;
+    app.stage.scale.y = 1;
+    console.log("View reset.");
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -394,5 +442,3 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('help-dialog').classList.add('hidden');
     });
 });
-
-
