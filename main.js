@@ -13,6 +13,8 @@ app.stage.addChild(lines);
 
 let selectedNode = null;
 
+const baseNodeWidth = 150; // Approximate width needed for a single node
+
 class Node extends PIXI.Graphics {
     constructor(x, y, text = 'New Node') {
         super();
@@ -31,6 +33,7 @@ class Node extends PIXI.Graphics {
         this.on('rightdown', this.onRightClick);
         this.on('pointerup', this.onSelect);
         this.connections = [];
+        this.subtreeWidth = 0;
     }
 
     set selected(value) {
@@ -47,9 +50,17 @@ class Node extends PIXI.Graphics {
         if (this._selected) {
             this.lineStyle(2, 0xFFFFFF);
         }
+        const nodeWidth = 80;
+        const nodeHeight = 40;
+        const borderRadius = 10;
+
         this.beginFill(0xDE3249);
-        this.drawCircle(0, 0, 30);
+        this.drawRoundedRect(-nodeWidth / 2, -nodeHeight / 2, nodeWidth, nodeHeight, borderRadius);
         this.endFill();
+
+        // Adjust text position if needed (though 0.5 anchor should still center it)
+        this.text.x = 0;
+        this.text.y = 0;
     }
 
     onDragStart(event) {
@@ -360,8 +371,11 @@ document.getElementById('layout-button').addEventListener('click', () => {
     }
     console.log("Root node for layout:", root.text.text);
 
-    const visited = new Set();
-    layoutTree(root, visited, app.screen.width / 2, 50, app.screen.width);
+    const visitedForWidth = new Set();
+    calculateSubtreeWidths(root, visitedForWidth);
+
+    const visitedForLayout = new Set();
+    layoutTree(root, visitedForLayout, app.screen.width / 2, 50, root.subtreeWidth);
 
     updateLines();
     resetView(); // Reset view after layout
@@ -387,6 +401,32 @@ function findRoot() {
     return allNodes.values().next().value;
 }
 
+function calculateSubtreeWidths(node, visited) {
+    if (visited.has(node)) {
+        return;
+    }
+    visited.add(node);
+
+    let childrenWidth = 0;
+    const unvisitedChildren = node.connections.filter(c => !visited.has(c));
+
+    if (unvisitedChildren.length === 0) {
+        node.subtreeWidth = baseNodeWidth;
+        return;
+    }
+
+    for (const child of unvisitedChildren) {
+        calculateSubtreeWidths(child, visited);
+        childrenWidth += child.subtreeWidth;
+    }
+
+    // Add some padding between children
+    node.subtreeWidth = childrenWidth + (unvisitedChildren.length - 1) * 30; // 30px padding between children
+    if (node.subtreeWidth < baseNodeWidth) {
+        node.subtreeWidth = baseNodeWidth;
+    }
+}
+
 function layoutTree(node, visited, x, y, totalWidth) {
     console.log(`layoutTree: Node=${node.text.text}, x=${x}, y=${y}, totalWidth=${totalWidth}`);
     if (visited.has(node)) {
@@ -407,20 +447,18 @@ function layoutTree(node, visited, x, y, totalWidth) {
     }
 
     const verticalSpacing = 150; // Increased vertical spacing
-    const horizontalPadding = 50; // Padding between child subtrees
 
     let currentX = x - totalWidth / 2;
 
     for (let i = 0; i < childCount; i++) {
         const child = children[i];
-        // Estimate child subtree width (a simple heuristic for now)
-        const childSubtreeWidth = totalWidth / childCount; 
+        const childSubtreeWidth = child.subtreeWidth;
         
         const childX = currentX + childSubtreeWidth / 2;
         const childY = y + verticalSpacing;
         
         console.log(`layoutTree: Recursing for child ${child.text.text} with x=${childX}, y=${childY}, subtreeWidth=${childSubtreeWidth}`);
-        layoutTree(child, visited, childX, childY, childSubtreeWidth - horizontalPadding);
+        layoutTree(child, visited, childX, childY, childSubtreeWidth);
         currentX += childSubtreeWidth;
     }
 }
