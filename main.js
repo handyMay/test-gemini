@@ -88,6 +88,7 @@ class Node extends PIXI.Graphics {
         this.data = event.data;
         this.alpha = 0.5; // Make the node semi-transparent while dragging
         this.dragging = true;
+        event.stopPropagation(); // Stop the event from bubbling up to the stage
     }
 
     /**
@@ -190,106 +191,36 @@ let clickTimeout = null;
  * It contains the logic to differentiate between single-clicks, double-clicks,
  * and clicks on different elements (nodes, lines, or the background).
  */
-app.stage.on('pointerdown', (event) => {
-    const clickTime = Date.now();
-    const clickPos = event.global;
-    const localPos = app.stage.toLocal(clickPos);
+app.stage.on('pointerdown', onDragStart);
+app.stage.on('pointerup', onDragEnd);
+app.stage.on('pointerupoutside', onDragEnd);
+app.stage.on('pointermove', onDragMove);
 
-    // Check if the current click is a double-click
-    const isDoubleClick = (clickTime - lastClickTime < 300 && Math.abs(clickPos.x - lastClickPos.x) < 10 && Math.abs(clickPos.y - lastClickPos.y) < 10);
+let stageDragging = false;
+let lastPosition = null;
 
-    if (clickTimeout) {
-        clearTimeout(clickTimeout);
-        clickTimeout = null;
+function onDragStart(event) {
+    if (event.target === app.stage) {
+        stageDragging = true;
+        lastPosition = event.data.global.clone();
     }
+}
 
-    if (isDoubleClick) {
-        // --- DOUBLE-CLICK LOGIC ---
-        if (event.target instanceof Node) {
-            // Double-clicked on a node: Edit its text
-            const node = event.target;
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.value = node.text.text;
-            input.style.position = 'absolute';
-            const screenPos = node.getGlobalPosition();
-            input.style.left = `${screenPos.x}px`;
-            input.style.top = `${screenPos.y}px`;
-            input.style.transform = 'translate(-50%, -50%)';
-            input.style.width = `${node.text.width + 20}px`;
-            document.getElementById('input-container').appendChild(input);
+function onDragEnd() {
+    stageDragging = false;
+    lastPosition = null;
+}
 
-            input.focus();
-
-            const onInputFinish = () => {
-                node.text.text = input.value;
-                document.getElementById('input-container').removeChild(input);
-            };
-
-            input.addEventListener('blur', onInputFinish);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    onInputFinish();
-                }
-            });
-        } else {
-            // Double-clicked on the background: Create a new node
-            const newNode = addNode(localPos.x, localPos.y);
-            if (selectedNode) {
-                // If a node is selected, connect the new node to it
-                selectedNode.connections.push(newNode);
-            }
-            updateLines();
-        }
-        lastClickTime = 0; // Reset to prevent triple-clicks
-    } else {
-        // --- SINGLE-CLICK LOGIC ---
-        lastClickTime = clickTime;
-        lastClickPos = clickPos;
-
-        // Use a timeout to wait and see if this is a single click or the first part of a double click
-        clickTimeout = setTimeout(() => {
-            // If the click was on a node, let the node's own handler manage it
-            if (event.target !== app.stage) {
-                return;
-            }
-
-            // Clicked on the background: Deselect any currently selected node
-            if (selectedNode) {
-                selectedNode.selected = false;
-                selectedNode = null;
-            }
-
-            // Check if a line was clicked to insert a new node
-            let lineClicked = false;
-            for (const nodeA of nodes) {
-                for (const nodeB of nodeA.connections) {
-                    const p = localPos;
-                    const p1 = { x: nodeA.x, y: nodeA.y };
-                    const p2 = { x: nodeB.x, y: nodeB.y };
-
-                    // Calculate the distance from the click point to the line segment
-                    const d = distToSegment(p, p1, p2);
-
-                    if (d < 5) { // If the click is close enough to the line
-                        const newNode = addNode(p.x, p.y);
-                        // Reroute the connection to go through the new node
-                        const index = nodeA.connections.indexOf(nodeB);
-                        if (index > -1) {
-                            nodeA.connections.splice(index, 1);
-                        }
-                        nodeA.connections.push(newNode);
-                        newNode.connections.push(nodeB);
-                        updateLines();
-                        lineClicked = true;
-                        break;
-                    }
-                }
-                if (lineClicked) break;
-            }
-        }, 300); // 300ms delay to distinguish single from double clicks
+function onDragMove(event) {
+    if (stageDragging) {
+        const newPosition = event.data.global;
+        const dx = newPosition.x - lastPosition.x;
+        const dy = newPosition.y - lastPosition.y;
+        app.stage.x += dx;
+        app.stage.y += dy;
+        lastPosition = newPosition.clone();
     }
-});
+}
 
 // --- UTILITY FUNCTIONS FOR LINE CLICK DETECTION ---
 
@@ -330,30 +261,7 @@ app.view.addEventListener('wheel', (event) => {
     app.stage.y = mouseY - worldPos.y * app.stage.scale.y;
 });
 
-// --- PAN FUNCTIONALITY ---
-let draggingStage = false;
-let prevX, prevY;
-app.view.addEventListener('mousedown', (event) => {
-    // Start panning only if the click is on the stage background
-    if (event.target === app.view) {
-        draggingStage = true;
-        prevX = event.clientX;
-        prevY = event.clientY;
-    }
-});
-app.view.addEventListener('mouseup', () => {
-    draggingStage = false;
-});
-app.view.addEventListener('mousemove', (event) => {
-    if (draggingStage) {
-        const dx = event.clientX - prevX;
-        const dy = event.clientY - prevY;
-        app.stage.x += dx;
-        app.stage.y += dy;
-        prevX = event.clientX;
-        prevY = event.clientY;
-    }
-});
+
 
 
 // --- SAVE AND LOAD FUNCTIONALITY ---
