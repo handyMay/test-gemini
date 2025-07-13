@@ -1,3 +1,4 @@
+// Initialize PixiJS Application
 const app = new PIXI.Application({ 
     width: window.innerWidth, 
     height: window.innerHeight, 
@@ -7,35 +8,48 @@ const app = new PIXI.Application({
 });
 document.getElementById('canvas-container').appendChild(app.view);
 
-let nodes = [];
-let lines = new PIXI.Graphics();
+// Global variables to hold the state of the mind map
+let nodes = []; // Array to store all node objects
+let lines = new PIXI.Graphics(); // A single graphics object to draw all connection lines
 app.stage.addChild(lines);
 
-let selectedNode = null;
+let selectedNode = null; // The currently selected node
 
-const baseNodeWidth = 150; // Approximate width needed for a single node
+// Base width for a single node, used in layout calculations
+const baseNodeWidth = 150;
 
+/**
+ * Represents a single node in the mind map.
+ * Extends PIXI.Graphics to draw the node's shape and handle interactions.
+ */
 class Node extends PIXI.Graphics {
     constructor(x, y, text = 'New Node') {
         super();
-        this.interactive = true;
-        this.cursor = 'pointer';
+        this.interactive = true; // Enable interaction events for this node
+        this.cursor = 'pointer'; // Show a pointer cursor on hover
         this.position.set(x, y);
+
+        // Create the text label for the node
         this.text = new PIXI.Text(text, { fontSize: 14, fill: 0xffffff });
-        this.text.anchor.set(0.5);
+        this.text.anchor.set(0.5); // Center the text
         this.addChild(this.text);
-        this._selected = false;
-        this.draw();
+
+        this._selected = false; // Internal state for selection
+        this.draw(); // Initial drawing of the node
+
+        // Event listeners for node interactions
         this.on('pointerdown', this.onDragStart);
         this.on('pointerup', this.onDragEnd);
         this.on('pointerupoutside', this.onDragEnd);
         this.on('pointermove', this.onDragMove);
         this.on('rightdown', this.onRightClick);
         this.on('pointerup', this.onSelect);
-        this.connections = [];
-        this.subtreeWidth = 0;
+
+        this.connections = []; // Array to store references to connected nodes
+        this.subtreeWidth = 0; // Used for the layout algorithm
     }
 
+    // Getter/setter for the selected state to automatically redraw on change
     set selected(value) {
         this._selected = value;
         this.draw();
@@ -45,54 +59,70 @@ class Node extends PIXI.Graphics {
         return this._selected;
     }
 
+    /**
+     * Draws the node's visual representation (the rounded rectangle).
+     * If the node is selected, it also draws a white border.
+     */
     draw() {
         this.clear();
         if (this._selected) {
-            this.lineStyle(2, 0xFFFFFF);
+            this.lineStyle(2, 0xFFFFFF); // White border for selected node
         }
         const nodeWidth = 80;
         const nodeHeight = 40;
         const borderRadius = 10;
 
-        this.beginFill(0xDE3249);
+        this.beginFill(0xDE3249); // Red fill color
         this.drawRoundedRect(-nodeWidth / 2, -nodeHeight / 2, nodeWidth, nodeHeight, borderRadius);
         this.endFill();
 
-        // Adjust text position if needed (though 0.5 anchor should still center it)
+        // Center the text within the node
         this.text.x = 0;
         this.text.y = 0;
     }
 
+    /**
+     * Handles the start of a drag operation on the node.
+     */
     onDragStart(event) {
         this.data = event.data;
-        this.alpha = 0.5;
+        this.alpha = 0.5; // Make the node semi-transparent while dragging
         this.dragging = true;
-        // No stopPropagation here, let stage handle it for selection/double-click
     }
 
+    /**
+     * Handles the end of a drag operation.
+     */
     onDragEnd() {
-        this.alpha = 1;
+        this.alpha = 1; // Restore full opacity
         this.dragging = false;
         this.data = null;
     }
 
+    /**
+     * Handles the movement during a drag operation.
+     */
     onDragMove() {
         if (this.dragging) {
             const newPosition = this.data.getLocalPosition(this.parent);
             this.x = newPosition.x;
             this.y = newPosition.y;
-            updateLines();
+            updateLines(); // Redraw connection lines as the node moves
         }
     }
 
+    /**
+     * Handles a right-click event to delete the node.
+     */
     onRightClick(event) {
-        console.log(`Right-click on node: ${this.text.text}`);
         const nodeToRemove = this;
+        // Remove the node from the global nodes array
         const index = nodes.indexOf(nodeToRemove);
         if (index > -1) {
             nodes.splice(index, 1);
         }
 
+        // Remove any connections to this node from other nodes
         for (const node of nodes) {
             const connectionIndex = node.connections.indexOf(nodeToRemove);
             if (connectionIndex > -1) {
@@ -100,54 +130,72 @@ class Node extends PIXI.Graphics {
             }
         }
 
-        app.stage.removeChild(nodeToRemove);
-        updateLines();
-        event.stopPropagation(); // Prevent stage from deselecting
+        app.stage.removeChild(nodeToRemove); // Remove the node from the PixiJS stage
+        updateLines(); // Redraw lines to reflect the removal
+        event.stopPropagation(); // Prevent the stage from processing this event further
     }
 
+    /**
+     * Handles the selection of a node.
+     */
     onSelect(event) {
-        console.log(`Node selected: ${this.text.text}`);
         if (selectedNode) {
-            selectedNode.selected = false;
+            selectedNode.selected = false; // Deselect the previously selected node
         }
         selectedNode = this;
         this.selected = true;
     }
 }
 
+/**
+ * Creates a new node, adds it to the stage and the global nodes array.
+ * @param {number} x - The x-coordinate for the new node.
+ * @param {number} y - The y-coordinate for the new node.
+ * @param {string} text - The initial text for the new node.
+ * @returns {Node} The newly created node.
+ */
 function addNode(x, y, text) {
     const node = new Node(x, y, text);
     app.stage.addChild(node);
     nodes.push(node);
-    console.log(`Node added: ${text} at (${x}, ${y})`);
     return node;
 }
 
+/**
+ * Redraws all connection lines between nodes.
+ * This is called whenever a node is moved, added, or deleted.
+ */
 function updateLines() {
-    lines.clear();
+    lines.clear(); // Clear all previously drawn lines
     for (const node of nodes) {
         for (const connection of node.connections) {
-            lines.lineStyle(2, 0xffffff);
+            lines.lineStyle(2, 0xffffff); // White lines
             lines.moveTo(node.x, node.y);
             lines.lineTo(connection.x, connection.y);
         }
     }
 }
 
+// Make the main stage interactive to capture clicks on the background
 app.stage.interactive = true;
 app.stage.hitArea = app.screen;
 
+// Variables to manage click vs. double-click detection
 let lastClickTime = 0;
 let lastClickPos = { x: 0, y: 0 };
 let clickTimeout = null;
 
+/**
+ * This is the main event handler for all pointer down events on the stage.
+ * It contains the logic to differentiate between single-clicks, double-clicks,
+ * and clicks on different elements (nodes, lines, or the background).
+ */
 app.stage.on('pointerdown', (event) => {
-    console.log("Stage pointerdown event fired. Target:", event.target);
-
     const clickTime = Date.now();
     const clickPos = event.global;
     const localPos = app.stage.toLocal(clickPos);
 
+    // Check if the current click is a double-click
     const isDoubleClick = (clickTime - lastClickTime < 300 && Math.abs(clickPos.x - lastClickPos.x) < 10 && Math.abs(clickPos.y - lastClickPos.y) < 10);
 
     if (clickTimeout) {
@@ -156,8 +204,9 @@ app.stage.on('pointerdown', (event) => {
     }
 
     if (isDoubleClick) {
-        console.log("Double click detected.");
+        // --- DOUBLE-CLICK LOGIC ---
         if (event.target instanceof Node) {
+            // Double-clicked on a node: Edit its text
             const node = event.target;
             const input = document.createElement('input');
             input.type = 'text';
@@ -184,42 +233,34 @@ app.stage.on('pointerdown', (event) => {
                 }
             });
         } else {
-            console.log("Double-click on canvas background.");
-            // Double-click on canvas background: create new node (child of selected or new root)
+            // Double-clicked on the background: Create a new node
             const newNode = addNode(localPos.x, localPos.y);
             if (selectedNode) {
+                // If a node is selected, connect the new node to it
                 selectedNode.connections.push(newNode);
-                console.log(`Connected new node to selected node: ${selectedNode.text.text}`);
-            } else {
-                console.log("No node selected, new node is a root.");
             }
             updateLines();
         }
-        // Reset lastClickTime to prevent triple-clicks or accidental double-clicks
-        lastClickTime = 0;
+        lastClickTime = 0; // Reset to prevent triple-clicks
     } else {
-        // This is a potential single click or the first click of a double click
+        // --- SINGLE-CLICK LOGIC ---
         lastClickTime = clickTime;
         lastClickPos = clickPos;
 
+        // Use a timeout to wait and see if this is a single click or the first part of a double click
         clickTimeout = setTimeout(() => {
-            console.log("Single click processed after delay.");
-            // If the click was NOT directly on the stage (i.e., it was on a child object like a Node),
-            // then we let the child object's handlers manage the event.
+            // If the click was on a node, let the node's own handler manage it
             if (event.target !== app.stage) {
-                console.log("Click was on a child object, stage will not handle this event.");
-                return; // Exit early if a child object was clicked
+                return;
             }
 
-            console.log("Single click on canvas background detected.");
-            // Single click on canvas background: deselect node
+            // Clicked on the background: Deselect any currently selected node
             if (selectedNode) {
-                console.log(`Deselecting node: ${selectedNode.text.text}`);
                 selectedNode.selected = false;
                 selectedNode = null;
             }
 
-            // Check for line click to insert a node
+            // Check if a line was clicked to insert a new node
             let lineClicked = false;
             for (const nodeA of nodes) {
                 for (const nodeB of nodeA.connections) {
@@ -227,19 +268,18 @@ app.stage.on('pointerdown', (event) => {
                     const p1 = { x: nodeA.x, y: nodeA.y };
                     const p2 = { x: nodeB.x, y: nodeB.y };
 
+                    // Calculate the distance from the click point to the line segment
                     const d = distToSegment(p, p1, p2);
 
-                    if (d < 5) {
-                        console.log(`Line click detected between ${nodeA.text.text} and ${nodeB.text.text}`);
+                    if (d < 5) { // If the click is close enough to the line
                         const newNode = addNode(p.x, p.y);
+                        // Reroute the connection to go through the new node
                         const index = nodeA.connections.indexOf(nodeB);
                         if (index > -1) {
                             nodeA.connections.splice(index, 1);
-                            console.log(`Removed connection from ${nodeA.text.text} to ${nodeB.text.text}`);
                         }
                         nodeA.connections.push(newNode);
                         newNode.connections.push(nodeB);
-                        console.log(`Inserted new node between ${nodeA.text.text} and ${nodeB.text.text}`);
                         updateLines();
                         lineClicked = true;
                         break;
@@ -247,9 +287,11 @@ app.stage.on('pointerdown', (event) => {
                 }
                 if (lineClicked) break;
             }
-        }, 300); // 300ms delay for single click
+        }, 300); // 300ms delay to distinguish single from double clicks
     }
 });
+
+// --- UTILITY FUNCTIONS FOR LINE CLICK DETECTION ---
 
 function dist2(v, w) {
     return (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
@@ -268,43 +310,42 @@ function distToSegment(p, v, w) {
 }
 
 
-// Zoom
+// --- ZOOM FUNCTIONALITY ---
 app.view.addEventListener('wheel', (event) => {
-    event.preventDefault(); // Prevent page scrolling
+    event.preventDefault(); // Prevent page from scrolling
 
-    const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1;
+    const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1; // Zoom in or out
 
-    // Get mouse position in stage coordinates
+    // Get the mouse position relative to the stage
     const mouseX = event.clientX;
     const mouseY = event.clientY;
+    const worldPos = app.stage.toLocal({x: mouseX, y: mouseY});
 
-    const worldX = (mouseX - app.stage.x) / app.stage.scale.x;
-    const worldY = (mouseY - app.stage.y) / app.stage.scale.y;
-
-    // Apply scale
+    // Apply the new scale
     app.stage.scale.x *= scaleFactor;
     app.stage.scale.y *= scaleFactor;
 
-    // Adjust stage position to keep the world point under the mouse
-    app.stage.x = mouseX - worldX * app.stage.scale.x;
-    app.stage.y = mouseY - worldY * app.stage.scale.y;
+    // Adjust the stage position to keep the point under the mouse the same
+    app.stage.x = mouseX - worldPos.x * app.stage.scale.x;
+    app.stage.y = mouseY - worldPos.y * app.stage.scale.y;
 });
 
-// Pan
-let dragging = false;
+// --- PAN FUNCTIONALITY ---
+let draggingStage = false;
 let prevX, prevY;
 app.view.addEventListener('mousedown', (event) => {
+    // Start panning only if the click is on the stage background
     if (event.target === app.view) {
-        dragging = true;
+        draggingStage = true;
         prevX = event.clientX;
         prevY = event.clientY;
     }
 });
 app.view.addEventListener('mouseup', () => {
-    dragging = false;
+    draggingStage = false;
 });
 app.view.addEventListener('mousemove', (event) => {
-    if (dragging) {
+    if (draggingStage) {
         const dx = event.clientX - prevX;
         const dy = event.clientY - prevY;
         app.stage.x += dx;
@@ -315,12 +356,19 @@ app.view.addEventListener('mousemove', (event) => {
 });
 
 
+// --- SAVE AND LOAD FUNCTIONALITY ---
+
+/**
+ * Handles the 'Save' button click.
+ * Serializes the mind map data to a JSON file and triggers a download.
+ */
 document.getElementById('save-button').addEventListener('click', () => {
     const data = {
         nodes: nodes.map(node => ({ x: node.x, y: node.y, text: node.text.text })),
         connections: [],
     };
 
+    // Store connections using node indices
     for (let i = 0; i < nodes.length; i++) {
         for (const connection of nodes[i].connections) {
             const j = nodes.indexOf(connection);
@@ -338,6 +386,10 @@ document.getElementById('save-button').addEventListener('click', () => {
     URL.revokeObjectURL(url);
 });
 
+/**
+ * Handles the file selection for loading a mind map.
+ * Reads the selected JSON file and reconstructs the mind map.
+ */
 document.getElementById('load-button').addEventListener('change', (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -346,19 +398,19 @@ document.getElementById('load-button').addEventListener('change', (event) => {
     reader.onload = (e) => {
         const data = JSON.parse(e.target.result);
 
-        // Clear existing nodes
+        // Clear the existing mind map
         for (const node of nodes) {
             app.stage.removeChild(node);
         }
         nodes = [];
         lines.clear();
 
-        // Add new nodes
+        // Create nodes from the loaded data
         for (const nodeData of data.nodes) {
             addNode(nodeData.x, nodeData.y, nodeData.text);
         }
 
-        // Add connections
+        // Recreate connections based on the loaded data
         for (const connection of data.connections) {
             const [i, j] = connection;
             nodes[i].connections.push(nodes[j]);
@@ -368,124 +420,138 @@ document.getElementById('load-button').addEventListener('change', (event) => {
     reader.readAsText(file);
 });
 
-// Initial node
+// Create the initial root node when the application starts
 addNode(app.screen.width / 2, app.screen.height / 2, 'Root');
 
 
+// --- AUTO-LAYOUT FUNCTIONALITY ---
+
+/**
+ * Handles the 'Layout' button click.
+ * Initiates the automatic layout process.
+ */
 document.getElementById('layout-button').addEventListener('click', () => {
-    console.log("Layout button clicked.");
-    if (nodes.length === 0) {
-        console.log("No nodes to layout.");
-        return;
-    }
+    if (nodes.length === 0) return;
 
     const root = findRoot();
     if (!root) {
         console.error("Could not find a root node for the layout.");
         return;
     }
-    console.log("Root node for layout:", root.text.text);
 
+    // The layout algorithm is a two-pass process:
+    // 1. Calculate the width of each subtree.
     const visitedForWidth = new Set();
     calculateSubtreeWidths(root, visitedForWidth);
 
+    // 2. Position the nodes based on the calculated widths.
     const visitedForLayout = new Set();
     layoutTree(root, visitedForLayout, app.screen.width / 2, 50, root.subtreeWidth);
 
     updateLines();
-    resetView(); // Reset view after layout
-    console.log("Layout complete.");
+    resetView(); // Center the view after layout
 });
 
+/**
+ * Finds the root node of the mind map.
+ * The root is a node that is not a child of any other node.
+ * @returns {Node|null} The root node, or a fallback if no clear root is found.
+ */
 function findRoot() {
     const allNodes = new Set(nodes);
+    // Remove any node that is a child from the set of potential roots
     for (const node of nodes) {
         for (const child of node.connections) {
             allNodes.delete(child);
         }
     }
-    if (allNodes.size === 0 && nodes.length > 0) {
-        console.log("No root found, but nodes exist. Returning first node as fallback.");
-        return nodes[0]; // Fallback for single node or cycles
+    // If there's exactly one root, we found it.
+    if (allNodes.size === 1) {
+        return allNodes.values().next().value;
     }
-    if (allNodes.size !== 1) {
+    // Fallback for disconnected graphs, cycles, or single-node maps.
+    if (nodes.length > 0) {
         console.warn("Mind map has multiple roots or is disconnected. Using the first node as the root for layout.");
         return nodes[0];
     }
-    console.log("Found single root:", allNodes.values().next().value.text.text);
-    return allNodes.values().next().value;
+    return null;
 }
 
+/**
+ * Recursively calculates the horizontal space required for each node's subtree.
+ * This is the first pass of the layout algorithm.
+ * @param {Node} node - The current node to process.
+ * @param {Set<Node>} visited - A set to keep track of visited nodes to avoid infinite loops in case of cycles.
+ */
 function calculateSubtreeWidths(node, visited) {
-    if (visited.has(node)) {
-        return;
-    }
+    if (visited.has(node)) return;
     visited.add(node);
 
-    let childrenWidth = 0;
     const unvisitedChildren = node.connections.filter(c => !visited.has(c));
 
     if (unvisitedChildren.length === 0) {
-        node.subtreeWidth = baseNodeWidth;
+        node.subtreeWidth = baseNodeWidth; // A leaf node has a base width
         return;
     }
 
+    let childrenWidth = 0;
     for (const child of unvisitedChildren) {
         calculateSubtreeWidths(child, visited);
         childrenWidth += child.subtreeWidth;
     }
 
-    // Add some padding between children
-    node.subtreeWidth = childrenWidth + (unvisitedChildren.length - 1) * 30; // 30px padding between children
+    // The width of a subtree is the sum of its children's widths plus padding
+    node.subtreeWidth = childrenWidth + (unvisitedChildren.length - 1) * 30; // 30px padding
     if (node.subtreeWidth < baseNodeWidth) {
         node.subtreeWidth = baseNodeWidth;
     }
 }
 
+/**
+ * Recursively positions the nodes in a top-down tree layout.
+ * This is the second pass of the layout algorithm.
+ * @param {Node} node - The current node to position.
+ * @param {Set<Node>} visited - A set to track visited nodes.
+ * @param {number} x - The target x-coordinate for the current node.
+ * @param {number} y - The target y-coordinate for the current node.
+ * @param {number} totalWidth - The total width allocated for this node's subtree.
+ */
 function layoutTree(node, visited, x, y, totalWidth) {
-    console.log(`layoutTree: Node=${node.text.text}, x=${x}, y=${y}, totalWidth=${totalWidth}`);
-    if (visited.has(node)) {
-        console.log(`layoutTree: Node ${node.text.text} already visited.`);
-        return;
-    }
+    if (visited.has(node)) return;
     visited.add(node);
 
     node.x = x;
     node.y = y;
-    console.log(`layoutTree: Setting node ${node.text.text} position to (${node.x}, ${node.y})`);
 
     const children = node.connections.filter(c => !visited.has(c));
-    const childCount = children.length;
-    console.log(`layoutTree: Node ${node.text.text} has ${childCount} unvisited children.`);
-    if (childCount === 0) {
-        return;
-    }
+    if (children.length === 0) return;
 
-    const verticalSpacing = 150; // Increased vertical spacing
+    const verticalSpacing = 150; // Space between parent and child levels
 
+    // Start positioning children from the left edge of the allocated width
     let currentX = x - totalWidth / 2;
 
-    for (let i = 0; i < childCount; i++) {
-        const child = children[i];
+    for (const child of children) {
         const childSubtreeWidth = child.subtreeWidth;
-        
         const childX = currentX + childSubtreeWidth / 2;
         const childY = y + verticalSpacing;
         
-        console.log(`layoutTree: Recursing for child ${child.text.text} with x=${childX}, y=${childY}, subtreeWidth=${childSubtreeWidth}`);
         layoutTree(child, visited, childX, childY, childSubtreeWidth);
-        currentX += childSubtreeWidth;
+        currentX += childSubtreeWidth + 30; // Move to the next child's position
     }
 }
 
+/**
+ * Resets the stage's position and scale to the default view.
+ */
 function resetView() {
     app.stage.x = 0;
     app.stage.y = 0;
     app.stage.scale.x = 1;
     app.stage.scale.y = 1;
-    console.log("View reset.");
 }
 
+// --- HELP DIALOG ---
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('help-button').addEventListener('click', () => {
         document.getElementById('help-dialog').classList.remove('hidden');
