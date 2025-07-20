@@ -182,45 +182,110 @@ app.stage.interactive = true;
 app.stage.hitArea = app.screen;
 
 // Variables to manage click vs. double-click detection
-let lastClickTime = 0;
-let lastClickPos = { x: 0, y: 0 };
-let clickTimeout = null;
+let dragStartPos = null;
+let isPanning = false;
 
-/**
- * This is the main event handler for all pointer down events on the stage.
- * It contains the logic to differentiate between single-clicks, double-clicks,
- * and clicks on different elements (nodes, lines, or the background).
- */
-app.stage.on('pointerdown', onDragStart);
-app.stage.on('pointerup', onDragEnd);
-app.stage.on('pointerupoutside', onDragEnd);
-app.stage.on('pointermove', onDragMove);
-
-let stageDragging = false;
-let lastPosition = null;
-
-function onDragStart(event) {
+app.stage.on('pointerdown', (event) => {
+    dragStartPos = event.data.global.clone();
     if (event.target === app.stage) {
-        stageDragging = true;
-        lastPosition = event.data.global.clone();
+        isPanning = true;
     }
-}
+});
 
-function onDragEnd() {
-    stageDragging = false;
-    lastPosition = null;
-}
+app.stage.on('pointerup', (event) => {
+    const dragEndPos = event.data.global;
+    const moveDistance = dragStartPos.subtract(dragEndPos).magnitude();
 
-function onDragMove(event) {
-    if (stageDragging) {
+    if (moveDistance < 5) { // It's a click
+        if (event.target === app.stage) {
+            // Deselect node
+            if (selectedNode) {
+                selectedNode.selected = false;
+                selectedNode = null;
+            }
+
+            // Check for line click
+            let lineClicked = false;
+            const localPos = app.stage.toLocal(event.global);
+            for (const nodeA of nodes) {
+                for (const nodeB of nodeA.connections) {
+                    const p = localPos;
+                    const p1 = { x: nodeA.x, y: nodeA.y };
+                    const p2 = { x: nodeB.x, y: nodeB.y };
+
+                    const d = distToSegment(p, p1, p2);
+
+                    if (d < 5) {
+                        const newNode = addNode(p.x, p.y);
+                        const index = nodeA.connections.indexOf(nodeB);
+                        if (index > -1) {
+                            nodeA.connections.splice(index, 1);
+                        }
+                        nodeA.connections.push(newNode);
+                        newNode.connections.push(nodeB);
+                        updateLines();
+                        lineClicked = true;
+                        break;
+                    }
+                }
+                if (lineClicked) break;
+            }
+        }
+    }
+    isPanning = false;
+    dragStartPos = null;
+});
+
+app.stage.on('pointermove', (event) => {
+    if (isPanning && dragStartPos) {
         const newPosition = event.data.global;
-        const dx = newPosition.x - lastPosition.x;
-        const dy = newPosition.y - lastPosition.y;
+        const dx = newPosition.x - dragStartPos.x;
+        const dy = newPosition.y - dragStartPos.y;
         app.stage.x += dx;
         app.stage.y += dy;
-        lastPosition = newPosition.clone();
+        dragStartPos = newPosition.clone();
     }
-}
+});
+
+app.stage.on('dblclick', (event) => {
+    const localPos = app.stage.toLocal(event.global);
+    if (event.target instanceof Node) {
+        // Edit node text
+        const node = event.target;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = node.text.text;
+        input.style.position = 'absolute';
+        const screenPos = node.getGlobalPosition();
+        input.style.left = `${screenPos.x}px`;
+        input.style.top = `${screenPos.y}px`;
+        input.style.transform = 'translate(-50%, -50%)';
+        input.style.width = `${node.text.width + 20}px`;
+        document.getElementById('input-container').appendChild(input);
+
+        input.focus();
+
+        const onInputFinish = () => {
+            node.text.text = input.value;
+            document.getElementById('input-container').removeChild(input);
+        };
+
+        input.addEventListener('blur', onInputFinish);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                onInputFinish();
+            }
+        });
+    } else {
+        // Create new node
+        const newNode = addNode(localPos.x, localPos.y);
+        if (selectedNode) {
+            selectedNode.connections.push(newNode);
+        }
+        updateLines();
+    }
+});
+
 
 // --- UTILITY FUNCTIONS FOR LINE CLICK DETECTION ---
 
@@ -360,6 +425,25 @@ document.getElementById('layout-button').addEventListener('click', () => {
     resetView(); // Center the view after layout
 });
 
+document.getElementById('horizontal-layout-button').addEventListener('click', () => {
+    if (nodes.length === 0) return;
+
+    const root = findRoot();
+    if (!root) {
+        console.error("Could not find a root node for the layout.");
+        return;
+    }
+
+    const visitedForHeight = new Set();
+    calculateSubtreeHeights(root, visitedForHeight);
+
+    const visitedForLayout = new Set();
+    layoutTreeHorizontal(root, visitedForLayout, 50, app.screen.height / 2, root.subtreeHeight);
+
+    updateLines();
+    resetView(); // Center the view after layout
+});
+
 /**
  * Finds the root node of the mind map.
  * The root is a node that is not a child of any other node.
@@ -415,6 +499,30 @@ function calculateSubtreeWidths(node, visited) {
     }
 }
 
+function calculateSubtreeHeights(node, visited) {
+    if (visited.has(node)) return;
+    visited.add(node);
+
+    const unvisitedChildren = node.connections.filter(c => !visited.has(c));
+
+    if (unvisitedChildren.length === 0) {
+        node.subtreeHeight = 100; // A leaf node has a base height
+        return;
+    }
+
+    let childrenHeight = 0;
+    for (const child of unvisitedChildren) {
+        calculateSubtreeHeights(child, visited);
+        childrenHeight += child.subtreeHeight;
+    }
+
+    // The height of a subtree is the sum of its children's heights plus padding
+    node.subtreeHeight = childrenHeight + (unvisitedChildren.length - 1) * 30; // 30px padding
+    if (node.subtreeHeight < 100) {
+        node.subtreeHeight = 100;
+    }
+}
+
 /**
  * Recursively positions the nodes in a top-down tree layout.
  * This is the second pass of the layout algorithm.
@@ -446,6 +554,30 @@ function layoutTree(node, visited, x, y, totalWidth) {
         
         layoutTree(child, visited, childX, childY, childSubtreeWidth);
         currentX += childSubtreeWidth + 30; // Move to the next child's position
+    }
+}
+
+function layoutTreeHorizontal(node, visited, x, y, totalHeight) {
+    if (visited.has(node)) return;
+    visited.add(node);
+
+    node.x = x;
+    node.y = y;
+
+    const children = node.connections.filter(c => !visited.has(c));
+    if (children.length === 0) return;
+
+    const horizontalSpacing = 200;
+
+    let currentY = y - totalHeight / 2;
+
+    for (const child of children) {
+        const childSubtreeHeight = child.subtreeHeight;
+        const childY = currentY + childSubtreeHeight / 2;
+        const childX = x + horizontalSpacing;
+
+        layoutTreeHorizontal(child, visited, childX, childY, childSubtreeHeight);
+        currentY += childSubtreeHeight + 30;
     }
 }
 
