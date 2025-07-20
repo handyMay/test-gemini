@@ -1,0 +1,9 @@
+{
+  "name": "test-gemini",
+  "version": "1.0.0",
+  "description": "Mind map application with testable core",
+  "main": "main.js",
+  "scripts": {
+    "test": "node test/mindmap.test.js"
+  }
+}
