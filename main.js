@@ -1,3 +1,6 @@
+// Initialize MindMap Core
+const mindMapCore = new MindMapCore();
+
 // Initialize PixiJS Application
 const app = new PIXI.Application({ 
     width: window.innerWidth, 

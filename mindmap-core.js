@@ -104,7 +104,79 @@ class MindMapCore {
         return node.subtreeWidth;
     }
 
-    // Add the remaining layout functions similarly...
+    calculateSubtreeHeights(nodeId, baseHeight, visited = new Set()) {
+        if (visited.has(nodeId)) return 0;
+        visited.add(nodeId);
+
+        const node = this.nodes.get(nodeId);
+        if (!node) return 0;
+
+        const unvisitedChildren = node.connections.filter(id => !visited.has(id));
+        if (unvisitedChildren.length === 0) {
+            node.subtreeHeight = baseHeight;
+            return baseHeight;
+        }
+
+        let childrenHeight = 0;
+        for (const childId of unvisitedChildren) {
+            childrenHeight += this.calculateSubtreeHeights(childId, baseHeight, visited);
+        }
+
+        node.subtreeHeight = Math.max(baseHeight, childrenHeight + (unvisitedChildren.length - 1) * 30);
+        return node.subtreeHeight;
+    }
+
+    layoutTree(nodeId, x, y, totalWidth, visited = new Set()) {
+        if (visited.has(nodeId)) return;
+        visited.add(nodeId);
+
+        const node = this.nodes.get(nodeId);
+        if (!node) return;
+
+        node.x = x;
+        node.y = y;
+
+        const children = node.connections.filter(id => !visited.has(id));
+        if (children.length === 0) return;
+
+        const verticalSpacing = 150;
+        let currentX = x - totalWidth / 2;
+
+        for (const childId of children) {
+            const childNode = this.nodes.get(childId);
+            const childX = currentX + childNode.subtreeWidth / 2;
+            const childY = y + verticalSpacing;
+            
+            this.layoutTree(childId, childX, childY, childNode.subtreeWidth, visited);
+            currentX += childNode.subtreeWidth + 30;
+        }
+    }
+
+    layoutTreeHorizontal(nodeId, x, y, totalHeight, visited = new Set()) {
+        if (visited.has(nodeId)) return;
+        visited.add(nodeId);
+
+        const node = this.nodes.get(nodeId);
+        if (!node) return;
+
+        node.x = x;
+        node.y = y;
+
+        const children = node.connections.filter(id => !visited.has(id));
+        if (children.length === 0) return;
+
+        const horizontalSpacing = 200;
+        let currentY = y - totalHeight / 2;
+
+        for (const childId of children) {
+            const childNode = this.nodes.get(childId);
+            const childY = currentY + childNode.subtreeHeight / 2;
+            const childX = x + horizontalSpacing;
+
+            this.layoutTreeHorizontal(childId, childX, childY, childNode.subtreeHeight, visited);
+            currentY += childNode.subtreeHeight + 30;
+        }
+    }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
