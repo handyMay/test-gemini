@@ -17,6 +17,7 @@ let lines = new PIXI.Graphics();
 app.stage.addChild(lines);
 
 let selectedNode = null;
+let previousSelectedNode = null;
 const baseNodeWidth = 150;
 
 /**
@@ -126,6 +127,7 @@ class Node extends PIXI.Graphics {
     onSelect(event) {
         if (selectedNode) {
             selectedNode.selected = false;
+            previousSelectedNode = selectedNode;
         }
         selectedNode = this;
         this.selected = true;
@@ -162,15 +164,15 @@ function addNode(x, y, text = 'New Node') {
  */
 function createChildNodeAt(x, y, text = 'New Node') {
     const node = addNode(x, y, text);
-    if (selectedNode) {
-        mindMapCore.connect(selectedNode.nodeId, node.nodeId);
-        console.log(`Connecting parent ${selectedNode.nodeId} to new node ${node.nodeId}`);
+    const parent = selectedNode || previousSelectedNode;
+    if (parent) {
+        mindMapCore.connect(parent.nodeId, node.nodeId);
+        console.log(`Connecting parent ${parent.nodeId} to new node ${node.nodeId}`);
     } else {
-        console.log('No selectedNode, not connecting new node');
+        console.log('No selectedNode or previousSelectedNode, not connecting new node');
     }
     updateLines();
     return node;
-}
 }
 
 function updateLines() {
@@ -251,10 +253,12 @@ app.stage.on('pointerup', (event) => {
             if (!doubleClickPending) {
                 if (selectedNode) {
                     console.log('Pointerup on stage: clearing selectedNode');
+                    previousSelectedNode = selectedNode;
                     selectedNode.selected = false;
                     selectedNode = null;
                 } else {
                     console.log('Pointerup on stage: no selectedNode to clear');
+                    previousSelectedNode = null;
                 }
             } else {
                 console.log('Pointerup on stage: skipping clear due to double-click/add node');
