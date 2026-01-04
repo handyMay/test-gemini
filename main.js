@@ -484,13 +484,22 @@ document.getElementById('layout-button').addEventListener('click', () => {
 
     const rootId = mindMapCore.findRoot();
     console.log('Detected rootId:', rootId);
-    if (!rootId) {
+    const rootNode = mindMapCore.nodes.get(rootId);
+    console.log('Root node object:', rootNode);
+        console.log('[main.js] Pre-check rootNode type:', typeof rootNode, 'value:', rootNode);
+    if (!rootId || !rootNode) {
+        console.log('[main.js] Layout abort debug:', { rootId, rootNode, nodes: mindMapCore.nodes });
         console.error("Could not find a root node for the layout.");
         return;
     }
-
+    console.log(`[main.js] Calling calculateSubtreeWidths with rootId: ${rootId}, baseNodeWidth: ${baseNodeWidth}`);
     mindMapCore.calculateSubtreeWidths(rootId, baseNodeWidth);
-    mindMapCore.layoutTree(rootId, app.screen.width / 2, 50, mindMapCore.nodes.get(rootId).subtreeWidth);
+    console.log('After calculateSubtreeWidths, rootNode.subtreeWidth:', rootNode.subtreeWidth);
+    if (typeof rootNode.subtreeWidth === 'undefined') {
+        console.error('subtreeWidth is undefined for rootNode:', rootNode);
+        return;
+    }
+    mindMapCore.layoutTree(rootId, app.screen.width / 2, 50, rootNode.subtreeWidth);
 
     // Update UI nodes positions
     for (const [id, node] of mindMapCore.nodes) {

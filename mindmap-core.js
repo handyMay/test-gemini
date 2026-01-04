@@ -83,15 +83,30 @@ class MindMapCore {
     }
 
     calculateSubtreeWidths(nodeId, baseWidth, visited = new Set()) {
-        if (visited.has(nodeId)) return 0;
+        console.log(`[calculateSubtreeWidths] called for nodeId: ${nodeId}, baseWidth: ${baseWidth}`);
+        // Use existing node variable, add log after width calculation
+        // ...existing code...
+        // After width calculation, log node
+        if (node) {
+            console.log(`[calculateSubtreeWidths] After calculation, node:`, node);
+        }
+        if (visited.has(nodeId)) {
+            console.log(`[calculateSubtreeWidths] Already visited node ${nodeId}`);
+            return 0;
+        }
         visited.add(nodeId);
 
         const node = this.nodes.get(nodeId);
-        if (!node) return 0;
+        if (!node) {
+            console.log(`[calculateSubtreeWidths] Node ${nodeId} not found`);
+            return 0;
+        }
 
         const unvisitedChildren = node.connections.filter(id => !visited.has(id));
+        console.log(`[calculateSubtreeWidths] Node ${nodeId} (${node.text}), children:`, unvisitedChildren);
         if (unvisitedChildren.length === 0) {
             node.subtreeWidth = baseWidth;
+            console.log(`[calculateSubtreeWidths] Leaf node ${nodeId} (${node.text}), subtreeWidth set to baseWidth: ${baseWidth}`);
             return baseWidth;
         }
 
@@ -101,6 +116,7 @@ class MindMapCore {
         }
 
         node.subtreeWidth = Math.max(baseWidth, childrenWidth + (unvisitedChildren.length - 1) * 30);
+        console.log(`[calculateSubtreeWidths] Node ${nodeId} (${node.text}), computed subtreeWidth: ${node.subtreeWidth}`);
         return node.subtreeWidth;
     }
 
