@@ -667,7 +667,7 @@ document.getElementById('layout-button').addEventListener('click', () => {
     const rootId = mindMapCore.findRoot();
     const rootNode = mindMapCore.nodes.get(rootId);
 
-    if (!rootId || !rootNode) {
+    if (rootId === null || rootId === undefined || !rootNode) {
         console.error("Could not find a root node for the layout.");
         return;
     }
@@ -705,7 +705,7 @@ document.getElementById('horizontal-layout-button').addEventListener('click', ()
     // Find root node of the tree
     const rootId = mindMapCore.findRoot();
 
-    if (!rootId) {
+    if (rootId === null || rootId === undefined) {
         console.error("Could not find a root node for the layout.");
         return;
     }
