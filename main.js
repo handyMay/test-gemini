@@ -1,30 +1,70 @@
-// Initialize MindMap Core
+// ============================================================================
+// INITIALIZATION & GLOBAL STATE
+// ============================================================================
+
+/**
+ * Initialize MindMap Core - the data model layer
+ */
 const mindMapCore = new MindMapCore();
 
-// Initialize PixiJS Application
-const app = new PIXI.Application({ 
-    width: window.innerWidth, 
-    height: window.innerHeight, 
-    backgroundColor: 0x1099bb, 
+/**
+ * Initialize PixiJS Application - the rendering engine
+ */
+const app = new PIXI.Application({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    backgroundColor: 0x1099bb,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
 });
 document.getElementById('canvas-container').appendChild(app.view);
 
-// Map to connect core node IDs with their UI representations
+/**
+ * Map to connect core node IDs with their UI representations (PIXI.Graphics objects)
+ * Key: node ID (number), Value: Node instance (PIXI.Graphics)
+ */
 const nodeUIMap = new Map();
+
+/**
+ * Global PIXI.Graphics object for drawing all connection lines
+ */
 let lines = new PIXI.Graphics();
 app.stage.addChild(lines);
 
+/**
+ * Currently selected node (for creating connections)
+ */
 let selectedNode = null;
+
+/**
+ * Previously selected node (fallback for creating connections)
+ */
 let previousSelectedNode = null;
+
+/**
+ * Base width used for layout calculations
+ */
 const baseNodeWidth = 150;
+
+// ============================================================================
+// NODE CLASS - UI REPRESENTATION
+// ============================================================================
 
 /**
  * Represents a single node in the mind map.
  * Extends PIXI.Graphics to draw the node's shape and handle interactions.
+ *
+ * @class Node
+ * @extends PIXI.Graphics
  */
 class Node extends PIXI.Graphics {
+    /**
+     * Creates a new Node instance
+     * @param {number} id - Unique identifier from MindMapCore
+     * @param {number} x - Initial x position
+     * @param {number} y - Initial y position
+     * @param {string} text - Display text for the node
+     */
     constructor(id, x, y, text = 'New Node') {
         super();
         this.nodeId = id;
@@ -32,15 +72,19 @@ class Node extends PIXI.Graphics {
         this.cursor = 'pointer';
         this.position.set(x, y);
 
-        // Show both label and node ID
+        // Store label separately for editing
         this.label = text;
+
+        // Create text display (shows label + node ID for debugging)
         this.text = new PIXI.Text(`${text} [${id}]`, { fontSize: 14, fill: 0xffffff });
         this.text.anchor.set(0.5);
         this.addChild(this.text);
 
+        // Selection state
         this._selected = false;
         this.draw();
 
+        // Set up event handlers
         this.on('pointerdown', this.onDragStart);
         this.on('pointerup', this.onDragEnd);
         this.on('pointerupoutside', this.onDragEnd);
@@ -49,15 +93,21 @@ class Node extends PIXI.Graphics {
         this.on('pointerup', this.onSelect);
     }
 
-    // Getter/setter for the selected state to automatically redraw on change
+    /**
+     * Gets the selected state
+     * @returns {boolean} True if node is selected
+     */
+    get selected() {
+        return this._selected;
+    }
 
+    /**
+     * Sets the selected state and triggers redraw
+     * @param {boolean} value - New selected state
+     */
     set selected(value) {
         this._selected = value;
         this.draw();
-    }
-
-    get selected() {
-        return this._selected;
     }
 
     /**
@@ -86,6 +136,8 @@ class Node extends PIXI.Graphics {
 
     /**
      * Handles the start of a drag operation on the node.
+     * Makes node semi-transparent and stores drag data.
+     * @param {PIXI.InteractionEvent} event - PixiJS pointer event
      */
     onDragStart(event) {
         this.data = event.data;
@@ -96,6 +148,7 @@ class Node extends PIXI.Graphics {
 
     /**
      * Handles the end of a drag operation.
+     * Restores opacity and updates core data model with new position.
      */
     onDragEnd() {
         this.alpha = 1;
@@ -107,15 +160,24 @@ class Node extends PIXI.Graphics {
         this.data = null;
     }
 
+    /**
+     * Handles pointer move events during drag.
+     * Updates node position and redraws connection lines (throttled for performance).
+     */
     onDragMove() {
         if (this.dragging) {
             const newPosition = this.data.getLocalPosition(this.parent);
             this.x = newPosition.x;
             this.y = newPosition.y;
-            updateLines();
+            updateLinesThrottled(); // Throttled to max 60fps
         }
     }
 
+    /**
+     * Handles right-click on node - deletes the node.
+     * Removes from core data model, UI, and connection lines.
+     * @param {PIXI.InteractionEvent} event - PixiJS pointer event
+     */
     onRightClick(event) {
         mindMapCore.removeNode(this.nodeId);
         app.stage.removeChild(this);
@@ -124,6 +186,11 @@ class Node extends PIXI.Graphics {
         event.stopPropagation();
     }
 
+    /**
+     * Handles node selection on pointer up.
+     * Deselects previous node and selects this one.
+     * @param {PIXI.InteractionEvent} event - PixiJS pointer event
+     */
     onSelect(event) {
         if (selectedNode) {
             selectedNode.selected = false;
@@ -135,7 +202,9 @@ class Node extends PIXI.Graphics {
     }
 }
 
-/**
+// ============================================================================
+// NODE CREATION FUNCTIONS
+// ============================================================================
 
 /**
  * Adds a node to the core and UI without connecting it to any parent.
@@ -167,18 +236,25 @@ function createChildNodeAt(x, y, text = 'New Node') {
     const parent = selectedNode || previousSelectedNode;
     if (parent) {
         mindMapCore.connect(parent.nodeId, node.nodeId);
-        console.log(`Connecting parent ${parent.nodeId} to new node ${node.nodeId}`);
-    } else {
-        console.log('No selectedNode or previousSelectedNode, not connecting new node');
     }
     updateLines();
     return node;
 }
 
+// ============================================================================
+// LINE RENDERING
+// ============================================================================
+
+/**
+ * Redraws all connection lines between nodes.
+ * Clears the lines graphics object and redraws all connections from the core data model.
+ * Use this for bulk operations (layout, load, etc).
+ */
 function updateLines() {
     lines.clear();
     lines.lineStyle(2, 0xffffff);
-    
+
+    // Iterate through all nodes in core and draw their connections
     for (const [fromId, fromNode] of mindMapCore.nodes) {
         const uiNodeFrom = nodeUIMap.get(fromId);
         for (const toId of fromNode.connections) {
@@ -191,24 +267,109 @@ function updateLines() {
     }
 }
 
+/**
+ * Throttle state for line updates during dragging
+ */
+let lineUpdatePending = false;
+
+/**
+ * Throttled line update using requestAnimationFrame.
+ * Ensures lines are only redrawn once per frame during dragging,
+ * preventing performance issues when dragging nodes quickly.
+ */
+function updateLinesThrottled() {
+    if (lineUpdatePending) return;
+
+    lineUpdatePending = true;
+    requestAnimationFrame(() => {
+        updateLines();
+        lineUpdatePending = false;
+    });
+}
+
+// ============================================================================
+// EVENT HANDLING - STAGE INTERACTIONS
+// ============================================================================
+
 // Make the main stage interactive to capture clicks on the background
 app.stage.interactive = true;
 app.stage.hitArea = app.screen;
 
-// Variables to manage click vs. double-click detection
-
+/**
+ * State variables for canvas panning/dragging
+ */
 let dragStartPos = null;
 let isPanning = false;
 
-// --- Custom Double-Click Detection ---
+/**
+ * Custom double-click detection state
+ * (PixiJS double-click detection is unreliable for our use case)
+ */
 let lastClickTime = 0;
 let lastClickPos = null;
-const DOUBLE_CLICK_DELAY = 350; // ms
-const DOUBLE_CLICK_DIST = 10; // px
-
+const DOUBLE_CLICK_DELAY = 350; // milliseconds
+const DOUBLE_CLICK_DIST = 10;   // pixels
 let doubleClickPending = false;
 
+/**
+ * Checks if a click position is near any connection line and inserts a node if found.
+ * Uses bounding box optimization to reduce expensive distance calculations.
+ *
+ * Still O(n²) in worst case, but with early exits and bounding box checks.
+ * TODO: Use spatial indexing (quadtree) for true O(log n) performance.
+ *
+ * @param {Object} localPos - Click position in local coordinates {x, y}
+ * @returns {boolean} True if a line was clicked and node inserted
+ */
+function handleLineClick(localPos) {
+    const LINE_CLICK_THRESHOLD = 5; // pixels
+    const BOUNDING_BOX_MARGIN = 10; // Extra margin for bounding box check
 
+    for (const [nodeIdA, nodeA] of mindMapCore.nodes) {
+        const uiNodeA = nodeUIMap.get(nodeIdA);
+
+        for (const toId of nodeA.connections) {
+            const uiNodeB = nodeUIMap.get(toId);
+            if (!uiNodeA || !uiNodeB) continue;
+
+            const p = localPos;
+            const p1 = { x: uiNodeA.x, y: uiNodeA.y };
+            const p2 = { x: uiNodeB.x, y: uiNodeB.y };
+
+            // Quick bounding box check - skip expensive distance calc if click is nowhere near line
+            const minX = Math.min(p1.x, p2.x) - BOUNDING_BOX_MARGIN;
+            const maxX = Math.max(p1.x, p2.x) + BOUNDING_BOX_MARGIN;
+            const minY = Math.min(p1.y, p2.y) - BOUNDING_BOX_MARGIN;
+            const maxY = Math.max(p1.y, p2.y) + BOUNDING_BOX_MARGIN;
+
+            if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
+                continue; // Click is outside bounding box, skip expensive distance calculation
+            }
+
+            // Now do the expensive distance calculation
+            const distance = distToSegment(p, p1, p2);
+
+            if (distance < LINE_CLICK_THRESHOLD) {
+                // Create new node at click position
+                const newNode = addNode(p.x, p.y);
+
+                // Remove old connection and create two new ones through the new node
+                mindMapCore.disconnect(nodeIdA, toId);
+                mindMapCore.connect(nodeIdA, newNode.nodeId);
+                mindMapCore.connect(newNode.nodeId, toId);
+
+                updateLines();
+                return true; // Early exit - we found and handled the click
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Handles pointer down events on the stage.
+ * Initiates panning and custom double-click detection.
+ */
 app.stage.on('pointerdown', (event) => {
     dragStartPos = event.data.global.clone();
     if (event.target === app.stage) {
@@ -237,69 +398,52 @@ app.stage.on('pointerdown', (event) => {
     }
 });
 
+/**
+ * Handles pointer up events on the stage.
+ * Determines if this was a click or drag, and handles node deselection and line clicks.
+ */
 app.stage.on('pointerup', (event) => {
     const dragEndPos = event.data.global;
+    const CLICK_THRESHOLD = 5; // pixels - maximum movement to still be considered a click
     let moveDistance = 0;
-    
+
+    // Calculate how far the pointer moved since pointerdown
     if (dragStartPos) {
         const dx = dragEndPos.x - dragStartPos.x;
         const dy = dragEndPos.y - dragStartPos.y;
         moveDistance = Math.sqrt(dx * dx + dy * dy);
     }
 
-    if (moveDistance < 5) { // It's a click
+    // Only process as a click if movement was minimal
+    if (moveDistance < CLICK_THRESHOLD) {
         if (event.target === app.stage) {
-            // Only clear selectedNode if not a double-click (add node action)
+            // Handle node deselection (clicking on empty canvas)
             if (!doubleClickPending) {
                 if (selectedNode) {
-                    console.log('Pointerup on stage: clearing selectedNode');
                     previousSelectedNode = selectedNode;
                     selectedNode.selected = false;
                     selectedNode = null;
                 } else {
-                    console.log('Pointerup on stage: no selectedNode to clear');
                     previousSelectedNode = null;
                 }
-            } else {
-                console.log('Pointerup on stage: skipping clear due to double-click/add node');
             }
 
-            // Check for line click
-            let lineClicked = false;
+            // Check if user clicked on a connection line
             const localPos = app.stage.toLocal(event.global);
-            for (const [nodeIdA, nodeA] of mindMapCore.nodes) {
-                const uiNodeA = nodeUIMap.get(nodeIdA);
-                for (const toId of nodeA.connections) {
-                    const uiNodeB = nodeUIMap.get(toId);
-                    if (!uiNodeA || !uiNodeB) continue;
-                    
-                    const p = localPos;
-                    const p1 = { x: uiNodeA.x, y: uiNodeA.y };
-                    const p2 = { x: uiNodeB.x, y: uiNodeB.y };
-
-                    const d = distToSegment(p, p1, p2);
-
-                    if (d < 5) {
-                        const newNode = addNode(p.x, p.y);
-                        const index = nodeA.connections.indexOf(nodeB);
-                        if (index > -1) {
-                            mindMapCore.disconnect(nodeIdA, toId);
-                        }
-                        mindMapCore.connect(nodeIdA, newNode.nodeId);
-                        mindMapCore.connect(newNode.nodeId, toId);
-                        updateLines();
-                        lineClicked = true;
-                        break;
-                    }
-                }
-                if (lineClicked) break;
-            }
+            handleLineClick(localPos);
         }
     }
+
+    // Reset panning state
     isPanning = false;
     dragStartPos = null;
 });
 
+/**
+ * Handles pointer move events for canvas panning.
+ * When panning is active (dragging canvas background), translates the entire stage.
+ * NOTE: No throttling - fires on every mouse move. Could be optimized.
+ */
 app.stage.on('pointermove', (event) => {
     if (isPanning && dragStartPos) {
         const newPosition = event.data.global;
@@ -311,12 +455,15 @@ app.stage.on('pointermove', (event) => {
     }
 });
 
-
-// Custom double-click handler
+/**
+ * Handles double-click events on the stage or nodes.
+ * - On node: Creates text input for editing node label
+ * - On canvas: Creates new child node connected to selected/previous node
+ *
+ * @param {PIXI.InteractionEvent} event - PixiJS pointer event
+ */
 function handleDoubleClick(event) {
     const localPos = app.stage.toLocal(event.data.global);
-    console.log('Double-click event:', event);
-    console.log('selectedNode:', selectedNode ? `${selectedNode.label} [${selectedNode.nodeId}]` : null);
     if (event.target instanceof Node) {
         // Edit node text
         const node = event.target;
@@ -351,33 +498,67 @@ function handleDoubleClick(event) {
     }
 }
 
+// ============================================================================
+// UTILITY FUNCTIONS - GEOMETRY
+// ============================================================================
 
-// --- UTILITY FUNCTIONS FOR LINE CLICK DETECTION ---
-
+/**
+ * Calculates squared distance between two points.
+ * Used for distance comparisons without expensive sqrt operation.
+ * @param {Object} v - First point {x, y}
+ * @param {Object} w - Second point {x, y}
+ * @returns {number} Squared distance
+ */
 function dist2(v, w) {
     return (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
 }
 
+/**
+ * Calculates squared distance from a point to a line segment.
+ * Uses projection to find closest point on segment.
+ * @param {Object} p - Point to measure from {x, y}
+ * @param {Object} v - Segment start point {x, y}
+ * @param {Object} w - Segment end point {x, y}
+ * @returns {number} Squared distance
+ */
 function distToSegmentSquared(p, v, w) {
     const l2 = dist2(v, w);
-    if (l2 === 0) return dist2(p, v);
+    if (l2 === 0) return dist2(p, v); // v and w are the same point
+
+    // Project point p onto line segment, clamping to [0,1] to stay on segment
     let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
     t = Math.max(0, Math.min(1, t));
+
     return dist2(p, { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) });
 }
 
+/**
+ * Calculates distance from a point to a line segment.
+ * Wrapper around distToSegmentSquared that returns actual distance.
+ * @param {Object} p - Point to measure from {x, y}
+ * @param {Object} v - Segment start point {x, y}
+ * @param {Object} w - Segment end point {x, y}
+ * @returns {number} Distance in pixels
+ */
 function distToSegment(p, v, w) {
     return Math.sqrt(distToSegmentSquared(p, v, w));
 }
 
+// ============================================================================
+// ZOOM & PAN CONTROLS
+// ============================================================================
 
-// --- ZOOM FUNCTIONALITY ---
+/**
+ * Handles mouse wheel events for zooming.
+ * Implements zoom-to-cursor functionality: zooms toward/away from mouse position.
+ * NOTE: No throttling - fires on every wheel event.
+ */
 app.view.addEventListener('wheel', (event) => {
     event.preventDefault(); // Prevent page from scrolling
 
-    const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1; // Zoom in or out
+    const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1; // Zoom out / Zoom in
 
-    // Get the mouse position relative to the stage
+    // Get the mouse position relative to the stage coordinate system
     const mouseX = event.clientX;
     const mouseY = event.clientY;
     const worldPos = app.stage.toLocal({x: mouseX, y: mouseY});
@@ -386,15 +567,15 @@ app.view.addEventListener('wheel', (event) => {
     app.stage.scale.x *= scaleFactor;
     app.stage.scale.y *= scaleFactor;
 
-    // Adjust the stage position to keep the point under the mouse the same
+    // Adjust the stage position to keep the point under the mouse stationary
+    // This creates the "zoom to cursor" effect
     app.stage.x = mouseX - worldPos.x * app.stage.scale.x;
     app.stage.y = mouseY - worldPos.y * app.stage.scale.y;
 });
 
-
-
-
-// --- SAVE AND LOAD FUNCTIONALITY ---
+// ============================================================================
+// SAVE & LOAD FUNCTIONALITY
+// ============================================================================
 
 /**
  * Handles the 'Save' button click.
@@ -424,6 +605,7 @@ document.getElementById('save-button').addEventListener('click', () => {
 /**
  * Handles the file selection for loading a mind map.
  * Reads the selected JSON file and reconstructs the mind map.
+ * NOTE: No error handling - invalid JSON will throw uncaught error.
  */
 document.getElementById('load-button').addEventListener('change', (event) => {
     const file = event.target.files[0];
@@ -457,51 +639,51 @@ document.getElementById('load-button').addEventListener('change', (event) => {
 // Create the initial root node when the application starts
 addNode(app.screen.width / 2, app.screen.height / 2, 'Root');
 
-
-// --- AUTO-LAYOUT FUNCTIONALITY ---
+// ============================================================================
+// AUTO-LAYOUT FUNCTIONALITY
+// ============================================================================
 
 /**
- * Handles the 'Layout' button click.
- * Initiates the automatic layout process.
+ * Resets the camera view to default position and zoom.
+ * Called after layout operations to show the entire mind map.
+ */
+function resetView() {
+    app.stage.x = 0;
+    app.stage.y = 0;
+    app.stage.scale.x = 1;
+    app.stage.scale.y = 1;
+}
+
+
+/**
+ * Handles the 'Vertical Layout' button click.
+ * Arranges nodes in a top-down tree structure.
+ * NOTE: Currently has issues with root node detection (see CLAUDE.md).
  */
 document.getElementById('layout-button').addEventListener('click', () => {
     if (mindMapCore.nodes.size === 0) return;
 
-    // Debug: Log all nodes and their connections
-    console.log('--- MindMapCore Nodes ---');
-    for (const [id, node] of mindMapCore.nodes) {
-        console.log(`Node ${id}: text='${node.text}', connections=[${node.connections.join(', ')}]`);
-    }
-
-    // Debug: Log all child node IDs
-    const childNodes = new Set();
-    for (const [, node] of mindMapCore.nodes) {
-        for (const childId of node.connections) {
-            childNodes.add(childId);
-        }
-    }
-    console.log('Child node IDs:', Array.from(childNodes));
-
+    // Find root node of the tree
     const rootId = mindMapCore.findRoot();
-    console.log('Detected rootId:', rootId);
     const rootNode = mindMapCore.nodes.get(rootId);
-    console.log('Root node object:', rootNode);
-        console.log('[main.js] Pre-check rootNode type:', typeof rootNode, 'value:', rootNode);
+
     if (!rootId || !rootNode) {
-        console.log('[main.js] Layout abort debug:', { rootId, rootNode, nodes: mindMapCore.nodes });
         console.error("Could not find a root node for the layout.");
         return;
     }
-    console.log(`[main.js] Calling calculateSubtreeWidths with rootId: ${rootId}, baseNodeWidth: ${baseNodeWidth}`);
+
+    // Calculate width needed for each subtree
     mindMapCore.calculateSubtreeWidths(rootId, baseNodeWidth);
-    console.log('After calculateSubtreeWidths, rootNode.subtreeWidth:', rootNode.subtreeWidth);
+
     if (typeof rootNode.subtreeWidth === 'undefined') {
-        console.error('subtreeWidth is undefined for rootNode:', rootNode);
+        console.error('Failed to calculate subtree widths for layout.');
         return;
     }
+
+    // Position nodes based on calculated widths
     mindMapCore.layoutTree(rootId, app.screen.width / 2, 50, rootNode.subtreeWidth);
 
-    // Update UI nodes positions
+    // Update UI node positions to match core data
     for (const [id, node] of mindMapCore.nodes) {
         const uiNode = nodeUIMap.get(id);
         if (uiNode) {
@@ -513,50 +695,39 @@ document.getElementById('layout-button').addEventListener('click', () => {
     resetView();
 });
 
+/**
+ * Handles the 'Horizontal Layout' button click.
+ * Arranges nodes in a left-to-right tree structure.
+ */
 document.getElementById('horizontal-layout-button').addEventListener('click', () => {
     if (mindMapCore.nodes.size === 0) return;
 
-    // Debug: Log all nodes and their connections
-    console.log('--- MindMapCore Nodes ---');
-    for (const [id, node] of mindMapCore.nodes) {
-        console.log(`Node ${id}: text='${node.text}', connections=[${node.connections.join(', ')}]`);
-    }
-
-    // Debug: Log all child node IDs
-    const childNodes = new Set();
-    for (const [, node] of mindMapCore.nodes) {
-        for (const childId of node.connections) {
-            childNodes.add(childId);
-        }
-    }
-    console.log('Child node IDs:', Array.from(childNodes));
-
+    // Find root node of the tree
     const rootId = mindMapCore.findRoot();
-    console.log('Detected rootId:', rootId);
+
     if (!rootId) {
         console.error("Could not find a root node for the layout.");
         return;
     }
 
+    // Calculate height needed for each subtree
     mindMapCore.calculateSubtreeHeights(rootId, 100);
-    mindMapCore.layoutTreeHorizontal(rootId, 50, app.screen.height / 2, mindMapCore.nodes.get(rootId).subtreeHeight);
+
+    // Position nodes based on calculated heights
+    mindMapCore.layoutTreeHorizontal(
+        rootId,
+        50,
+        app.screen.height / 2,
+        mindMapCore.nodes.get(rootId).subtreeHeight
+    );
 
     updateLines();
-    resetView(); // Center the view after layout
+    resetView();
 });
 
-
-/**
- * Resets the stage's position and scale to the default view.
- */
-function resetView() {
-    app.stage.x = 0;
-    app.stage.y = 0;
-    app.stage.scale.x = 1;
-    app.stage.scale.y = 1;
-}
-
-// --- HELP DIALOG ---
+// ============================================================================
+// HELP DIALOG
+// ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('help-button').addEventListener('click', () => {
         document.getElementById('help-dialog').classList.remove('hidden');

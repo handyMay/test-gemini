@@ -1,5 +1,5 @@
 const assert = require('assert');
-const MindMapCore = require('./mindmap-core.js');
+const MindMapCore = require('../mindmap-core.js');
 
 describe('MindMap Core', () => {
     let mindmap;

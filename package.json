@@ -4,6 +4,6 @@
   "description": "Mind map application with testable core",
   "main": "main.js",
   "scripts": {
-    "test": "node test/mindmap.test.js"
+    "test": "node test/simple-test.js"
   }
 }
