@@ -69,8 +69,8 @@ npx http-server -o
 
 ## Known Issues
 
-- Vertical layout not working correctly due to root node detection issue (commit: 5931be1)
-- Node connections use `previousSelectedNode` mechanism which may be confusing
+- ~~Vertical layout not working correctly due to root node detection issue~~ **FIXED** (was commit: 5931be1, fixed during refactoring)
+- Node connections use `previousSelectedNode` mechanism which may be confusing (design choice, not a bug)
 
 ## Code Inefficiencies & Technical Debt
 
