@@ -171,4 +171,62 @@ npx http-server -o
 
 ## Testing
 
+### Unit Tests
+
 Tests in `test/mindmap.test.js` cover core functionality only. The test file imports `mindmap-core.js` directly and requires a Node.js environment with `assert` and a test framework (implied by `describe`/`beforeEach` usage, likely Mocha).
+
+```bash
+# Run the unit tests
+npm test
+```
+
+### Local Development Server
+
+To test the application in a browser:
+
+```bash
+# Serve the application locally (opens browser automatically)
+npx http-server -o
+
+# Or specify a port
+npx http-server -p 8080 -o
+```
+
+The application will be available at `http://localhost:8080` (or the port you specified).
+
+### Public URL with ngrok (for remote testing/sharing)
+
+If you need to access the application from another device or share it with others, use ngrok to create a public tunnel:
+
+1. **Install ngrok** (if not already installed):
+   - Download from [ngrok.com](https://ngrok.com/download)
+   - Or install via package manager:
+     ```bash
+     # macOS
+     brew install ngrok
+
+     # Linux (snap)
+     snap install ngrok
+     ```
+
+2. **Start the local server first**:
+   ```bash
+   npx http-server -p 8080
+   ```
+
+3. **In a new terminal, start ngrok**:
+   ```bash
+   ngrok http 8080
+   ```
+
+4. **Get the public URL**:
+   - ngrok will display output like:
+     ```
+     Forwarding   https://abc123.ngrok.io -> http://localhost:8080
+     ```
+   - Copy the `https://` URL (e.g., `https://abc123.ngrok.io`)
+   - This URL is publicly accessible and can be used on any device
+
+5. **Stop ngrok**: Press `Ctrl+C` in the ngrok terminal when done
+
+**Note**: Free ngrok URLs are temporary and change each time you restart ngrok. For persistent URLs, you'll need a paid ngrok account.
